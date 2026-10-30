@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SUPER JAVA ADVENTURE</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;background:#14213d;color:white;
+  font-family:Arial,sans-serif;text-align:center;
+  overflow:hidden;touch-action:none
+}
+h1{font-size:24px;margin:8px;color:#ffd43b}
+#game{
+  display:block;width:100%;max-width:1000px;
+  height:65vh;margin:auto;background:#67c8ff;
+  image-rendering:pixelated
+}
+#info{
+  padding:6px;font-size:16px;font-weight:bold;
+  display:flex;justify-content:space-around;flex-wrap:wrap
+}
+.controls{
+  position:fixed;bottom:12px;left:0;right:0;
+  display:flex;justify-content:space-between;
+  padding:0 15px;pointer-events:none
+}
+.group{display:flex;gap:12px}
+button{
+  width:65px;height:65px;border:3px solid white;
+  border-radius:15px;background:#18243bd9;color:white;
+  font-size:27px;font-weight:bold;touch-action:none;
+  pointer-events:auto
+}
+#attack{background:#c0392b}
+#jump{background:#2471a3}
+#message{
+  position:absolute;top:42%;left:0;width:100%;
+  font-size:25px;font-weight:bold;color:#fff;
+  text-shadow:2px 3px #222;pointer-events:none
+}
+</style>
+</head>
+<body>
+
+<h1>⚔️ SUPER JAVA ADVENTURE ⚔️</h1>
+
+<div id="info">
+ <span id="hp">❤️❤️❤️</span>
+ <span id="coins">🪙 Koin: 0</span>
+ <span id="kills">👾 Monster: 0</span>
+</div>
+
+<canvas id="game" width="900" height="500"></canvas>
+<div id="message">SUPER JAVA ADVENTURE</div>
+
+<div class="controls">
+ <div class="group">
+  <button id="left">◀</button>
+  <button id="right">▶</button>
+ </div>
+ <div class="group">
+  <button id="attack">⚔</button>
+  <button id="jump">⬆</button>
+ </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const W=900,H=500;
+let keys={},coins=0,kills=0,gameOver=false,win=false;
+let camera=0,frame=0;
+const worldWidth=5000;
+
+const player={
+ x:80,y:300,w:32,h:44,
+ vx:0,vy:0,speed:4,
+ hp:3,face:1,ground:false,
+ attack:0,invincible:0
+};
+
+const platforms=[
+ {x:0,y:420,w:700,h:80},
+ {x:760,y:390,w:350,h:110},
+ {x:1180,y:420,w:450,h:80},
+ {x:1700,y:370,w:300,h:130},
+ {x:2080,y:420,w:500,h:80},
+ {x:2660,y:380,w:400,h:120},
+ {x:3120,y:420,w:400,h:80},
+ {x:3600,y:380,w:450,h:120},
+ {x:4100,y:420,w:900,h:80},
+ {x:350,y:330,w:150,h:20},
+ {x:850,y:300,w:150,h:20},
+ {x:1350,y:320,w:150,h:20},
+ {x:2200,y:330,w:150,h:20},
+ {x:2850,y:290,w:150,h:20},
+ {x:3750,y:290,w:150,h:20}
+];
+
+let enemies=[];
+for(let i=0;i<16;i++){
+ enemies.push({
+  x:350+i*290,y:0,w:32,h:36,
+  vx:Math.random()<.5?-1:1,
+  hp:i%5===4?3:1,
+  alive:true,
+  type:i%5===4?"boss":"zombie",
+  min:300+i*290,max:500+i*290
+ });
+}
+
+let treasures=[];
+for(let i=0;i<65;i++){
+ treasures.push({
+  x:150+i*75,
+  y:300-(i%3)*45,
+  got:false
+ });
+}
+
+function rect(x,y,w,h,color){
+ ctx.fillStyle=color;
+ ctx.fillRect(Math.round(x),Math.round(y),w,h);
+}
+
+function text(t,x,y,size,color){
+ ctx.font="bold "+size+"px Arial";
+ ctx.fillStyle=color;
+ ctx.fillText(t,x,y);
+}
+
+function drawBackground(){
+ let sky=ctx.createLinearGradient(0,0,0,H);
+ sky.addColorStop(0,"#168be5");
+ sky.addColorStop(1,"#b6f2ff");
+ ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+
+ // Pegunungan
+ for(let i=0;i<9;i++){
+  let x=((i*180-camera*.18)%1400+1400)%1400-150;
+  ctx.fillStyle=i%2?"#559bc4":"#397ba8";
+  ctx.beginPath();
+  ctx.moveTo(x,380);
+  ctx.lineTo(x+100,150+i%3*35);
+  ctx.lineTo(x+220,380);
+  ctx.fill();
+ }
+
+ // Awan
+ for(let i=0;i<7;i++){
+  let x=((i*190-camera*.25)%1100+1100)%1100-100;
+  rect(x,65+i%3*45,65,22,"#fff");
+  rect(x+15,50+i%3*45,38,35,"#fff");
+  rect(x+40,65+i%3*45,45,22,"#fff");
+ }
+
+ // Pepohonan
+ for(let i=0;i<13;i++){
+  let x=((i*240-camera*.45)%3000+3000)%3000-100;
+  rect(x+18,300,18,95,"#79502e");
+  rect(x,265,55,50,"#178a48");
+  rect(x+8,240,40,45,"#20ad52");
+ }
+}
+
+function drawPlatforms(){
+ platforms.forEach(p=>{
+  let x=p.x-camera;
+  if(x+p.w<0||x>W)return;
+  rect(x,p.y,p.w,p.h,"#75452a");
+  rect(x,p.y,p.w,12,"#36a844");
+  rect(x,p.y+12,p.w,5,"#80d43a");
+
+  for(let bx=x;bx<x+p.w;bx+=35){
+   rect(bx,p.y+25,30,4,"#59331f");
+   rect(bx+12,p.y+40,4,20,"#59331f");
+  }
+ });
+}
+
+function drawCoin(c){
+ let x=c.x-camera;
+ if(c.got)return;
+ let pulse=Math.sin(frame*.12)*2;
+ rect(x-8,c.y-12+pulse,16,24,"#b87508");
+ rect(x-6,c.y-13+pulse,12,24,"#ffd42a");
+ rect(x-3,c.y-8+pulse,5,14,"#fff29a");
+}
+
+function drawPlayer(){
+ let x=player.x-camera,y=player.y;
+ ctx.save();
+ if(player.invincible>0&&Math.floor(frame/5)%2===0){
+  ctx.globalAlpha=.35;
+ }
+
+ // Rambut
+ rect(x+5,y,23,9,"#45251b");
+ rect(x+2,y+6,9,7,"#45251b");
+ // Wajah
+ rect(x+7,y+7,20,15,"#ffcc91");
+ // Mata
+ rect(x+20,y+12,4,5,"#151515");
+ // Ikat kepala
+ rect(x+4,y+5,26,5,"#e53935");
+ rect(x+1,y+7,9,4,"#e53935");
+ // Baju
+ rect(x+5,y+22,23,13,"#e53935");
+ rect(x+9,y+23,14,12,"#2471d1");
+ // Tangan
+ rect(x,y+23,7,12,"#ffcc91");
+ rect(x+27,y+23,7,12,"#ffcc91");
+ // Celana
+ rect(x+6,y+35,9,7,"#164ca0");
+ rect(x+19,y+35,9,7,"#164ca0");
+ // Sepatu
+ rect(x+3,y+41,12,4,"#37251e");
+ rect(x+19,y+41,12,4,"#37251e");
+
+ // Pedang
+ if(player.attack>0){
+  rect(x+player.face*24,y+17,player.face*27,6,"#eaf8ff");
+  rect(x+player.face*22,y+15,5,12,"#ffdb52");
+ }else{
+  rect(x+player.face*22,y+25,player.face*15,5,"#eaf8ff");
+  rect(x+player.face*20,y+23,5,10,"#ffdb52");
+ }
+ ctx.restore();
+}
+
+function drawEnemy(e){
+ if(!e.alive)return;
+ let x=e.x-camera,y=e.y;
+ if(x<-60||x>W+60)return;
+
+ if(e.type==="boss"){
+  rect(x+4,y,24,9,"#4e246c");
+  rect(x,y+8,32,22,"#6d35a1");
+  rect(x+4,y+28,10,8,"#372046");
+  rect(x+20,y+28,10,8,"#372046");
+  // Tanduk
+  rect(x+2,y-6,7,10,"#eee7db");
+  rect(x+23,y-6,7,10,"#eee7db");
+  rect(x+7,y+11,5,5,"#ff3434");
+  rect(x+21,y+11,5,5,"#ff3434");
+ }else{
+  rect(x+5,y,22,10,"#327b32");
+  rect(x+1,y+9,30,18,"#398d3c");
+  rect(x+4,y+27,9,9,"#253b29");
+  rect(x+20,y+27,9,9,"#253b29");
+  rect(x+9,y+12,4,5,"#ff3838");
+  rect(x+21,y+12,4,5,"#ff3838");
+  rect(x+12,y+23,10,3,"#eee");
+ }
+}
+
+function overlap(a,b){
+ return a.x<b.x+b.w&&a.x+a.w>b.x&&
+ a.y<b.y+b.h&&a.y+a.h>b.y;
+}
+
+function attack(){
+ if(gameOver||win)return;
+ player.attack=12;
+ let hit=false;
+ enemies.forEach(e=>{
+  if(!e.alive)return;
+  let range={
+   x:player.x+(player.face===1?player.w:-35),
+   y:player.y+5,w:38,h:player.h-5
+  };
+  if(overlap(range,e)){
+   e.hp--;
+   e.x+=player.face*22;
+   hit=true;
+   if(e.hp<=0){
+    e.alive=false;kills++;
+    coins+=e.type==="boss"?5:1;
+   }
+  }
+ });
+ if(hit)updateUI();
+}
+
+function updateUI(){
+ document.getElementById("hp").textContent=
+ "❤️".repeat(Math.max(0,player.hp))+
+ "🖤".repeat(Math.max(0,3-player.hp));
+ document.getElementById("coins").textContent="🪙 Koin: "+coins;
+ document.getElementById("kills").textContent="👾 Monster: "+kills;
+}
+
+function update(){
+ if(gameOver||win)return;
+ frame++;
+
+ player.vx=0;
+ if(keys.left){player.vx=-player.speed;player.face=-1}
+ if(keys.right){player.vx=player.speed;player.face=1}
+
+ player.x=Math.max(0,Math.min(worldWidth-player.w,player.x+player.vx));
+
+ player.vy+=.55;
+ if(player.vy>12)player.vy=12;
+ player.y+=player.vy;
+ player.ground=false;
+
+ platforms.forEach(p=>{
+  if(player.x+player.w>p.x&&player.x<p.x+p.w&&
+     player.y+player.h>=p.y&&
+     player.y+player.h<=p.y+18&&player.vy>=0){
+   player.y=p.y-player.h;
+   player.vy=0;
+   player.ground=true;
+  }
+ });
+
+ if(player.y>H+100){
+  player.hp--;
+  if(player.hp<=0){gameOver=true}
+  else{player.x=Math.max(20,player.x-100);player.y=200;player.vy=0}
+  updateUI();
+ }
+
+ if(player.attack>0)player.attack--;
+ if(player.invincible>0)player.invincible--;
+
+ enemies.forEach(e=>{
+  if(!e.alive)return;
+  e.y=0;
+  let p=platforms.find(p=>e.x+e.w>p.x&&e.x<p.x+p.w&&p.y>=player.y-100);
+  if(p)e.y=p.y-e.h;
+  else e.y=384;
+
+  e.x+=e.vx*(e.type==="boss"?1.3:1);
+  if(e.x<e.min||e.x>e.max)e.vx*=-1;
+
+  if(overlap(player,e)&&player.invincible<=0){
+   player.hp--;
+   player.invincible=75;
+   player.vy=-6;
+   player.x+=player.x<e.x?-28:28;
+   updateUI();
+   if(player.hp<=0)gameOver=true;
+  }
+ });
+
+ treasures.forEach(c=>{
+  if(!c.got&&Math.abs(player.x-c.x)<25&&
+     Math.abs(player.y-c.y)<50){
+   c.got=true;coins++;updateUI();
+  }
+ });
+
+ camera=Math.max(0,Math.min(worldWidth-W,player.x-W*.35));
+
+ if(player.x>worldWidth-150){
+  win=true;
+  document.getElementById("message").textContent=
+  "🏆 KAMU MENANG! SUPER JAVA!";
+ }
+
+ if(gameOver){
+  document.getElementById("message").textContent=
+  "GAME OVER! Tekan ENTER untuk ulang";
+ }
+}
+
+function draw(){
+ drawBackground();
+ drawPlatforms();
+
+ // Kastil tujuan
+ let castleX=worldWidth-350-camera;
+ rect(castleX,265,180,155,"#737f91");
+ rect(castleX-15,250,65,35,"#8795a8");
+ rect(castleX+115,250,65,35,"#8795a8");
+ rect(castleX+65,350,50,70,"#292f43");
+ rect(castleX+75,350,30,70,"#171b2a");
+ rect(castleX+25,225,6,35,"#4d2d20");
+ rect(castleX+31,225,30,18,"#e53e3e");
+
+ treasures.forEach(drawCoin);
+ enemies.forEach(drawEnemy);
+ drawPlayer();
+
+ if(gameOver||win){
+  ctx.fillStyle="#0009";
+  ctx.fillRect(0,0,W,H);
+  text(win?"KAMU MENANG!":"GAME OVER",W/2-115,220,32,"#ffdc40");
+  text("Tekan ENTER untuk bermain lagi",W/2-170,265,20,"white");
+ }
+}
+
+function loop(){
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+
+function restart(){
+ player.x=80;player.y=300;player.vx=0;player.vy=0;
+ player.hp=3;player.attack=0;player.invincible=0;
+ coins=0;kills=0;camera=0;gameOver=false;win=false;
+ enemies.forEach((e,i)=>{
+  e.alive=true;e.hp=i%5===4?3:1;
+  e.x=350+i*290;e.vx=i%2===0?1:-1;
+ });
+ treasures.forEach(c=>c.got=false);
+ document.getElementById("message").textContent="";
+ updateUI();
+}
+
+function bindButton(id,key){
+ let b=document.getElementById(id);
+ b.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  keys[key]=true;
+  if(key==="jump"&&player.ground&&!gameOver&&!win){
+   player.vy=-12;player.ground=false;
+  }
+  if(key==="attack")attack();
+ });
+ ["pointerup","pointercancel","pointerleave"].forEach(evt=>{
+  b.addEventListener(evt,e=>{
+   e.preventDefault();keys[key]=false;
+  });
+ });
+}
+
+bindButton("left","left");
+bindButton("right","right");
+bindButton("jump","jump");
+bindButton("attack","attack");
+
+document.addEventListener("keydown",e=>{
+ if(["ArrowLeft","ArrowRight","ArrowUp","Space"].includes(e.code))
+ e.preventDefault();
+
+ if(e.code==="ArrowLeft"||e.code==="KeyA")keys.left=true;
+ if(e.code==="ArrowRight"||e.code==="KeyD")keys.right=true;
+
+ if((e.code==="ArrowUp"||e.code==="Space"||e.code==="KeyW")
+ &&!keys.jump){
+  keys.jump=true;
+  if(player.ground&&!gameOver&&!win){
+   player.vy=-12;player.ground=false;
+  }
+ }
+
+ if((e.code==="KeyJ"||e.code==="KeyK")&&!e.repeat)attack();
+ if(e.code==="Enter"&&(gameOver||win))restart();
+});
+
+document.addEventListener("keyup",e=>{
+ if(e.code==="ArrowLeft"||e.code==="KeyA")keys.left=false;
+ if(e.code==="ArrowRight"||e.code==="KeyD")keys.right=false;
+ if(["ArrowUp","Space","KeyW"].includes(e.code))keys.jump=false;
+});
+
+updateUI();
+loop();
+</script>
+</body>
+</html>
